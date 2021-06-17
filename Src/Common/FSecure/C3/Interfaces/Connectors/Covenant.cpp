@@ -244,18 +244,27 @@ FSecure::C3::Interfaces::Connectors::Covenant::Covenant(ByteView arguments)
 		this->m_ListeningPostAddress = url.substr(start, end - start);
 
 		///Create the bridge listener
-		url = this->m_webHost + OBF("/listener/createbridge");
+		url = this->m_webHost + OBF("/api/listeners/bridge");
 		web::http::client::http_client webClientBridge(utility::conversions::to_string_t(url), config);
 		request = web::http::http_request(web::http::methods::POST);
-		request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/x-www-form-urlencoded")));
+		request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/json")));
 
 		std::string authHeader = OBF("Bearer ") + this->m_token;
 		request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
 
-		std::string createBridgeString = "Id=0&GUID=b85ea642f2&ListenerTypeId=2&Status=Active&CovenantToken=&Description=A+Bridge+for+custom+listeners.&Name=C3Bridge&BindAddress=0.0.0.0&BindPort=" + \
-			std::to_string(this->m_ListeningPostPort) + "&ConnectPort=" + std::to_string(this->m_ListeningPostPort) + "&ConnectAddresses%5B0%5D=" + \
-			this->m_ListeningPostAddress + "&ProfileId=3";
-		request.set_body(utility::conversions::to_string_t(createBridgeString));
+		json createBridgeData;
+		createBridgeData[OBF("Id")] = 0;
+		createBridgeData[OBF("Name")] = OBF("C3Bridge");
+		createBridgeData[OBF("GUID")] = OBF("b85ea642f2");
+		createBridgeData[OBF("description")] = OBF("A Bridge for custom listeners.");
+		createBridgeData[OBF("bindAddress")] = OBF("0.0.0.0");
+		createBridgeData[OBF("bindPort")] = this->m_ListeningPostPort;
+		createBridgeData[OBF("ConnectAddresses")] = { this->m_ListeningPostAddress };
+		createBridgeData[OBF("ConnectPort")] = this->m_ListeningPostPort;
+		createBridgeData[OBF("ProfileId")] = 3;
+		createBridgeData[OBF("ListenerTypeId")] = 2;
+		createBridgeData[OBF("Status")] = OBF("Active");		
+		request.set_body(utility::conversions::to_string_t(createBridgeData.dump()));
 
 		task = webClientBridge.request(request);
 		resp = task.get();
@@ -268,7 +277,8 @@ FSecure::C3::Interfaces::Connectors::Covenant::Covenant(ByteView arguments)
 
 	}
 	//Set the listening address to the C2-Bridge on localhost
-	this->m_ListeningPostAddress = "127.0.0.1";
+	// TODO: Understand why they use static local IP
+	// this->m_ListeningPostAddress = "127.0.0.1";
 	InitializeSockets();
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -583,10 +593,10 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::Connection::SecondThreadStar
 
 FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::PeripheralCreationCommand(ByteView connectionId, ByteView data, bool isX64)
 {
-	auto [pipeName, delay, jitter, connectAttempts] = data.Read<std::string, uint32_t, uint32_t, uint32_t>();
+	auto [manualExecution, pipeName, delay, jitter, connectAttempts] = data.Read<std::string, std::string, uint32_t, uint32_t, uint32_t>();
 
 
-	return ByteVector{}.Write(pipeName, GeneratePayload(connectionId, pipeName, delay, jitter, connectAttempts), connectAttempts);
+	return ByteVector{}.Write(manualExecution, pipeName, GeneratePayload(connectionId, pipeName, delay, jitter, connectAttempts), connectAttempts);
 }
 
 

