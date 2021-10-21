@@ -46,6 +46,7 @@ namespace FSecure::C3::Interfaces::Peripherals
 		/// Optional is used to perform many trails of staging in constructor.
 		/// Must contain object if constructor call was successful.
 		std::optional<WinTools::AlternatingPipe> m_Pipe;
+		std::optional<WinTools::AlternatingPipe> m_Pipew;
 
 		/// Used to synchronize access to underlying implant.
 		std::mutex m_Mutex;
