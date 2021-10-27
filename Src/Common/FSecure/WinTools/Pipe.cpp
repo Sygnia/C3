@@ -166,7 +166,6 @@ FSecure::WinTools::AlternatingPipe::AlternatingPipe(ByteView pipename)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 FSecure::ByteVector FSecure::WinTools::AlternatingPipe::ReadCov()
 {
-	std::cout << "Enter ReadCov, Wait for single object" << std::endl;
 	DWORD temp = 0, total = 0, result = 0, available = 0;
 	// Removed because double pipes don't require it and it causes a deadlock.
 	/*if (WaitForSingleObject(m_Event.get(), 0) != WAIT_OBJECT_0)
@@ -181,7 +180,6 @@ FSecure::ByteVector FSecure::WinTools::AlternatingPipe::ReadCov()
 	if (available == 0)
 		return {};
 	//The SMB Grunt writes the size of the chunk in a loop like the below, mimic that here.
-	std::cout << "Read message size" << std::endl;
 	BYTE size[4] = { 0 };
 	int totalReadBytes = 0;
 	for(int i = 0; i < 4; i++)
@@ -196,14 +194,12 @@ FSecure::ByteVector FSecure::WinTools::AlternatingPipe::ReadCov()
 	//Now read the actual data
 	DWORD read = 0;
 	temp = 0;
-	std::cout << "Reading message" << std::endl;
 	while (total < len) {
 		bool didRead = ReadFile(m_Pipe.get(), (LPVOID)& buffer[read], len - total, &temp,
 			NULL);
 		total += temp;
 		read += temp;
 	}
-	std::cout << "Exit ReadCov" << std::endl;
 	return buffer;
 
 }
@@ -234,7 +230,6 @@ FSecure::ByteVector FSecure::WinTools::AlternatingPipe::Read()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 size_t FSecure::WinTools::AlternatingPipe::WriteCov(ByteView data)
 {
-	std::cout << "Enter WriteCov" << std::endl;
 	DWORD written;
 	DWORD start = 0, size = static_cast<DWORD>(data.size());
 
@@ -243,11 +238,9 @@ size_t FSecure::WinTools::AlternatingPipe::WriteCov(ByteView data)
 	DWORD32 chunkLength = (bytes[0] << 24) + (bytes[1] << 16) + (bytes[2] << 8) + bytes[3];
 
 	//Write the length first
-	std::cout << "Writing Size" << std::endl;
 	WriteFile(m_Pipe.get(), &chunkLength, 4, nullptr, nullptr);
 
 	//We have to write in chunks of 1024, this is mirrored in how the Grunt reads.
-	std::cout << "Writing message" << std::endl;
 	const uint8_t* d = &data.front();
 	while (size > 1024)
 	{
@@ -264,7 +257,6 @@ size_t FSecure::WinTools::AlternatingPipe::WriteCov(ByteView data)
 	// Removed because double pipes don't require it and it causes a deadlock.
 	// Let Read() know that the pipe is ready to be read.
 	//SetEvent(m_Event.get());
-	std::cout << "Exit WriteCov" << std::endl;
 	return data.size();
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
