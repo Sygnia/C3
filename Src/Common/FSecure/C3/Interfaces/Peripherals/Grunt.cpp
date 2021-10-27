@@ -214,44 +214,15 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 
 void FSecure::C3::Interfaces::Peripherals::Grunt::OnCommandFromConnector(ByteView data)
 {
-	Log({ OBF_SEC("Enter OnCommandFromConnector, received data from C2 on channel"), LogMessage::Severity::DebugInformation });
-	// Get access to write when whole read is done.
-	/*std::unique_lock<std::mutex> lock{ m_Mutex };
-	m_ConditionalVariable.wait(lock, [this]() { return !m_ReadingState || m_Close; });
-
-	if(m_Close)
-		return;*/
 	// Write to Covenant specific pipe
 	m_Pipew->WriteCov(data);
-	Log({ OBF_SEC("Received data from C2 Written to Covenant"), LogMessage::Severity::DebugInformation });
-
-	// Unlock, and block writing until read is done.
-	/*Log({ OBF_SEC("Set reading state to true"), LogMessage::Severity::DebugInformation });
-	m_ReadingState = true;
-	lock.unlock();
-	m_ConditionalVariable.notify_one();*/
-	Log({ OBF_SEC("Exit OnCommandFromConnector"), LogMessage::Severity::DebugInformation });
-
 }
 
 FSecure::ByteVector FSecure::C3::Interfaces::Peripherals::Grunt::OnReceiveFromPeripheral()
 {
-	Log({ OBF_SEC("Enter OnReceiveFromPeripheral, data from Grunt"), LogMessage::Severity::DebugInformation });
-	/*std::unique_lock<std::mutex> lock{ m_Mutex };
-	m_ConditionalVariable.wait(lock, [this]() { return m_ReadingState || m_Close; });
-
-	if(m_Close)
-		return {};*/
-
 	// Read
 	auto ret = m_Pipe->ReadCov();
-	Log({ OBF_SEC("Received data from Grunt"), LogMessage::Severity::DebugInformation });
 
-	/*m_ReadingState = false;
-	lock.unlock();
-	m_ConditionalVariable.notify_one();*/
-
-	Log({ OBF_SEC("Exit OnReceiveFromPeripheral"), LogMessage::Severity::DebugInformation });
 	return  ret;
 
 }
