@@ -381,18 +381,46 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePaylo
 	
 	web::http::client::http_client_config config;
 	config.set_validate_certificates(false);
-	web::http::client::http_client webClient(utility::conversions::to_string_t(this->m_webHost + OBF("/api/launchers/binary")), config);
+
 	web::http::http_request request;
 	pplx::task<web::http::http_response> task;
 	web::http::http_response resp;
 
 	request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/json")));
 	request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
+
+	// Get GruntSMB template ID
+	uint32_t gruntSmbTemplateId = -1;
+	web::http::client::http_client implantWebClient(utility::conversions::to_string_t(this->m_webHost + OBF("/api/implanttemplates/")), config);
+	request.set_method(web::http::methods::GET);
+	task = implantWebClient.request(request);
+	resp = task.get();
+	if (resp.status_code() != web::http::status_codes::OK)
+		throw std::exception((OBF("[Covenant] Error getting implant templates, HTTP resp: ") + std::to_string(resp.status_code())).c_str());
+
+	//Get the json response
+	auto respData = resp.extract_string();
+	json response = json::parse(respData.get());
+
+	for (auto& implantTemplate : response)
+	{
+		if (implantTemplate[OBF("name")] != OBF("GruntSMB"))
+			continue;
+		gruntSmbTemplateId = implantTemplate[OBF("id")];
+		break;
+	}
+	if (-1 == gruntSmbTemplateId)
+	{
+		throw std::exception((OBF("[Covenant] Error finding GruntSMB template")));
+
+	}
+
 	//The data to create an SMB Grunt
+	web::http::client::http_client webClient(utility::conversions::to_string_t(this->m_webHost + OBF("/api/launchers/binary")), config);
 	// Update Grunt data to current
 	json postData;
 	postData[OBF("listenerId")] = this->m_ListenerId;
-	postData[OBF("implantTemplateId")] = 4; //for GruntSMB template
+	postData[OBF("implantTemplateId")] = gruntSmbTemplateId;
 	postData[OBF("Name")] = OBF("C3SMB");
 	postData[OBF("description")] = OBF("A SMB Launcher for C3Bridge Listener.");
 	postData[OBF("type")] = OBF("Binary");
