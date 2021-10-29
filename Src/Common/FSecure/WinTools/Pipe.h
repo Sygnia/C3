@@ -121,7 +121,7 @@ namespace FSecure::WinTools
 		/// @throws std::runtime_error if data.size() cannot be stored in uint32_t. This condition is highly unlikly in normal use.
 		/// @throws std::runtime_error if conection was closed from other side during transmision.
 		size_t Write(ByteView data);
-		
+
 	private:
 		/// Input pipe.
 		ReadPipe m_InputPipe;

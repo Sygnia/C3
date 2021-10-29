@@ -197,7 +197,8 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 	{
 		try
 		{
-			m_Pipe = WinTools::AlternatingPipe{ ByteView{ pipeName } };
+			m_Pipe = WinTools::AlternatingPipe{ ByteView{ pipeName + "w" } };
+			m_Pipew = WinTools::AlternatingPipe{ ByteView{ pipeName } };
 			return;
 		}
 		catch (std::exception& e)
@@ -213,36 +214,14 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 
 void FSecure::C3::Interfaces::Peripherals::Grunt::OnCommandFromConnector(ByteView data)
 {
-	// Get access to write when whole read is done.
-	std::unique_lock<std::mutex> lock{ m_Mutex };
-	m_ConditionalVariable.wait(lock, [this]() { return !m_ReadingState || m_Close; });
-
-	if(m_Close)
-		return;
 	// Write to Covenant specific pipe
-	m_Pipe->WriteCov(data);
-
-	// Unlock, and block writing until read is done.
-	m_ReadingState = true;
-	lock.unlock();
-	m_ConditionalVariable.notify_one();
-
+	m_Pipew->WriteCov(data);
 }
 
 FSecure::ByteVector FSecure::C3::Interfaces::Peripherals::Grunt::OnReceiveFromPeripheral()
 {
-	std::unique_lock<std::mutex> lock{ m_Mutex };
-	m_ConditionalVariable.wait(lock, [this]() { return m_ReadingState || m_Close; });
-
-	if(m_Close)
-		return {};
-
 	// Read
 	auto ret = m_Pipe->ReadCov();
-
-	m_ReadingState = false;
-	lock.unlock();
-	m_ConditionalVariable.notify_one();
 
 	return  ret;
 
