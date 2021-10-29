@@ -166,10 +166,19 @@ FSecure::WinTools::AlternatingPipe::AlternatingPipe(ByteView pipename)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 FSecure::ByteVector FSecure::WinTools::AlternatingPipe::ReadCov()
 {
-	DWORD temp = 0, total = 0;
-	if (WaitForSingleObject(m_Event.get(), 0) != WAIT_OBJECT_0)
-		return{};
+	DWORD temp = 0, total = 0, result = 0, available = 0;
+	// Removed because double pipes don't require it and it causes a deadlock.
+	/*if (WaitForSingleObject(m_Event.get(), 0) != WAIT_OBJECT_0)
+		return{};*/
 
+	for (int i = 0; i < 2; i++) {
+		result = PeekNamedPipe(m_Pipe.get(), NULL, NULL, NULL, &available, NULL);
+		if (available > 0)
+			break;
+		Sleep(1000);
+	}
+	if (available == 0)
+		return {};
 	//The SMB Grunt writes the size of the chunk in a loop like the below, mimic that here.
 	BYTE size[4] = { 0 };
 	int totalReadBytes = 0;
@@ -191,7 +200,6 @@ FSecure::ByteVector FSecure::WinTools::AlternatingPipe::ReadCov()
 		total += temp;
 		read += temp;
 	}
-
 	return buffer;
 
 }
@@ -246,9 +254,9 @@ size_t FSecure::WinTools::AlternatingPipe::WriteCov(ByteView data)
 	if (start != data.size())
 		throw std::runtime_error{ OBF("Write pipe failed ") };
 
+	// Removed because double pipes don't require it and it causes a deadlock.
 	// Let Read() know that the pipe is ready to be read.
-	SetEvent(m_Event.get());
-
+	//SetEvent(m_Event.get());
 	return data.size();
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
