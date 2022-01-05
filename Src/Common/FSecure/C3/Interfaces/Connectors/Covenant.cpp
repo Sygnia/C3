@@ -610,6 +610,8 @@ FSecure::C3::Interfaces::Connectors::Covenant::Connection::~Connection()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void FSecure::C3::Interfaces::Connectors::Covenant::Connection::Send(ByteView data)
 {
+	int bytesSent = 0;
+	DWORD bytesSentTotal = 0;
 	auto owner = m_Owner.lock();
 	if (!owner)
 		throw std::runtime_error(OBF("Could not lock pointer to owner "));
@@ -628,7 +630,23 @@ void FSecure::C3::Interfaces::Connectors::Covenant::Connection::Send(ByteView da
 		throw FSecure::SocketsException(OBF("Error sending to Socket : ") + std::to_string(WSAGetLastError()) + OBF("."), WSAGetLastError());
 
 	// Write the chunk to socket.
-	send(m_Socket, (char *)&unpacked.front(), length, 0);
+	
+	for (bytesSentTotal = 0; bytesSentTotal < length; bytesSentTotal += bytesSent)
+	{
+		bytesSent = send(m_Socket, (char*)&unpacked.front() + bytesSentTotal, length - bytesSentTotal, 0);
+		if (SOCKET_ERROR == bytesSent)
+		{
+			throw FSecure::SocketsException(OBF("Error sending to Socket : ") + std::to_string(WSAGetLastError()) + OBF("."), WSAGetLastError());
+		}
+	}
+	if (bytesSentTotal != length)
+	{
+		std::cout << "################################# ERROR send " << bytesSentTotal << " Instead of " << length << std::endl;
+	}
+
+	// int bytes_sent = send(m_Socket, (char *)&unpacked.front(), length, 0);
+	// std::cout << "sent " << bytes_sent << " out of " << length << std::endl;
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
