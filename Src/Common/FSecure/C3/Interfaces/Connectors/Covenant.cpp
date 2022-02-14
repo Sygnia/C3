@@ -610,8 +610,6 @@ FSecure::C3::Interfaces::Connectors::Covenant::Connection::~Connection()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void FSecure::C3::Interfaces::Connectors::Covenant::Connection::Send(ByteView data)
 {
-	int bytesSent = 0;
-	DWORD bytesSentTotal = 0;
 	auto owner = m_Owner.lock();
 	if (!owner)
 		throw std::runtime_error(OBF("Could not lock pointer to owner "));
