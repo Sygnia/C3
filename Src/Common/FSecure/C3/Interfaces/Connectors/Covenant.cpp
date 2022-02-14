@@ -628,7 +628,16 @@ void FSecure::C3::Interfaces::Connectors::Covenant::Connection::Send(ByteView da
 		throw FSecure::SocketsException(OBF("Error sending to Socket : ") + std::to_string(WSAGetLastError()) + OBF("."), WSAGetLastError());
 
 	// Write the chunk to socket.
-	send(m_Socket, (char *)&unpacked.front(), length, 0);
+	DWORD total_bytes_sent = 0;
+	while (total_bytes_sent < length)
+	{
+		DWORD current_bytes_sent = send(m_Socket, (char*)&unpacked.front(), length, 0);
+		if (SOCKET_ERROR == current_bytes_sent)
+			throw FSecure::SocketsException(OBF("Error sending payload to Socket : ") + std::to_string(WSAGetLastError()) + OBF("."), WSAGetLastError());
+		total_bytes_sent += current_bytes_sent;
+	}
+
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
