@@ -255,7 +255,6 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::CreateListener()
 bool FSecure::C3::Interfaces::Connectors::Covenant::UpdateLauncherId(std::string gruntType)
 {
 	std::string url = this->m_webHost + OBF("/api/launchers");
-	std::pair<std::string, uint16_t> data;
 	json response;
 
 	web::http::client::http_client_config config;
@@ -342,48 +341,6 @@ FSecure::C3::Interfaces::Connectors::Covenant::Covenant(ByteView arguments)
 	// Create bridge listener
 	if (!CreateListener()) {
 		throw std::exception((OBF("[Covenant] Error creating bridge listener")));
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	}
 
 	//Set the listening address to the C2-Bridge on localhost

