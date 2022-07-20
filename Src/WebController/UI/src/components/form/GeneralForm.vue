@@ -109,6 +109,8 @@ export default class GeneralForm extends Mixins(C3) {
         return 'Textarea';
       case 'binary':
         return 'Textarea';
+      case 'select':
+        return 'Select';
     }
     return 'Input';
   }
@@ -128,6 +130,9 @@ export default class GeneralForm extends Mixins(C3) {
     if (index > -1) {
       this.argumentObjects[index].value = payload.value;
       this.argumentObjects[index].isValid = payload.valid;
+      if(this.argumentObjects[index].type === "select") {
+        this.argumentObjects[index].selected = payload.value;
+      }
     }
 
     this.emitFormData();

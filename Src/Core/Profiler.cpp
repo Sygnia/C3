@@ -47,7 +47,7 @@ void FSecure::C3::Core::Profiler::HandleActionsPacket(ByteView actionsPacket)
 			if (element != actions.end())
 				return element;
 
-			throw std::runtime_error{ std::string{ elementName } +" is not specified." };
+			throw std::runtime_error{ std::string{ elementName } + " is not specified." };
 		};
 
 		// Parse AgentId.
@@ -61,7 +61,7 @@ void FSecure::C3::Core::Profiler::HandleActionsPacket(ByteView actionsPacket)
 	catch (std::exception& exception)
 	{
 		if (auto gateway = m_Gateway->m_Gateway.lock())
-			gateway->Log({ "Caught an exception while parsing Action. "s + exception.what(), FSecure::C3::LogMessage::Severity::Error});
+			gateway->Log({ "Caught an exception while parsing Action. "s + exception.what(), FSecure::C3::LogMessage::Severity::Error });
 	}
 }
 
@@ -143,7 +143,7 @@ FSecure::ByteVector FSecure::C3::Core::Profiler::Translate(std::string const& ty
 		return ByteVector{}.Write(value.is_string() ? std::stof(value.get<std::string>()) : value.get<float>());
 	if (type == "boolean")
 		return ByteVector{}.Write(value.get<bool>());
-	if (type == "string" || type == "ip")
+	if (type == "string" || type == "ip" || type == "select")
 		return ByteVector{}.Write(value.get<std::string>());
 	if (type == "binary")
 		return ByteVector{}.Write(base64::decode<ByteVector>(value.get<std::string>()));
@@ -792,39 +792,39 @@ void FSecure::C3::Core::Profiler::Gateway::ParseAndRunCommand(json const& jComma
 					auto localView = commandReadView;
 					switch (FSecure::C3::Command(localView.Read<std::uint16_t>()))
 					{
-						case FSecure::C3::Command::UpdateJitter:
+					case FSecure::C3::Command::UpdateJitter:
+					{
+						Device* profilerElement = m_Channels.Find(device->GetDid());
+						if (!profilerElement)
+							profilerElement = m_Peripherals.Find(device->GetDid());
+
+						if (!profilerElement)
+							throw std::runtime_error{ "Device not found" };
+
+						profilerElement->m_Jitter.first = FSecure::Utils::ToMilliseconds(localView.Read<float>());
+						profilerElement->m_Jitter.second = FSecure::Utils::ToMilliseconds(localView.Read<float>());
+						break;
+					}
+					case FSecure::C3::Command::Close:
+					{
+						if (auto profilerElement = m_Peripherals.Find(device->GetDid()))
 						{
-							Device* profilerElement = m_Channels.Find(device->GetDid());
-							if (!profilerElement)
-								profilerElement = m_Peripherals.Find(device->GetDid());
+							auto connectorHash = m_Owner.lock()->GetBinderTo(profilerElement->m_TypeHash);
+							auto connector = m_Gateway.lock()->m_Connectors.Find([&](auto const& e) { return e->GetNameHash() == connectorHash; });
+							if (!connector)
+								break;
 
-							if (!profilerElement)
-								throw std::runtime_error{ "Device not found" };
-
-							profilerElement->m_Jitter.first = FSecure::Utils::ToMilliseconds(localView.Read<float>());
-							profilerElement->m_Jitter.second = FSecure::Utils::ToMilliseconds(localView.Read<float>());
-							break;
+							// Remove connection.
+							connector->CloseConnection(ByteVector::Create(RouteId{ m_Id, device->GetDid() }));
 						}
-						case FSecure::C3::Command::Close:
+						else if (auto profilerElemnt = m_Channels.Find(device->GetDid()))
 						{
-							if (auto profilerElement = m_Peripherals.Find(device->GetDid()))
-							{
-								auto connectorHash = m_Owner.lock()->GetBinderTo(profilerElement->m_TypeHash);
-								auto connector = m_Gateway.lock()->m_Connectors.Find([&](auto const& e) { return e->GetNameHash() == connectorHash; });
-								if (!connector)
-									break;
-
-								// Remove connection.
-								connector->CloseConnection(ByteVector::Create(RouteId{ m_Id, device->GetDid() }));
-							}
-							else if (auto profilerElemnt = m_Channels.Find(device->GetDid()))
-							{
-								m_Routes.RemoveIf([did = device->GetDid()](Profiler::Route const& route) { return route.m_OutgoingDevice == did; });
-							}
-							break;
+							m_Routes.RemoveIf([did = device->GetDid()](Profiler::Route const& route) { return route.m_OutgoingDevice == did; });
 						}
-						default:
-							break;
+						break;
+					}
+					default:
+						break;
 					}
 
 					device->RunCommand(commandReadView);
@@ -916,12 +916,12 @@ json FSecure::C3::Core::Profiler::Gateway::GetCapability()
 		// move commands from buffer to modified json in correct order.
 		for (auto prefixEntryIterator = buffer.rbegin(); prefixEntryIterator != buffer.rend(); ++prefixEntryIterator)
 			for (auto&& relayEntry : *prefixEntryIterator)
-				for (auto &&e : relayEntry.second)
-				initialPacket[relayEntry.first]["commands"].push_back(std::move(e));
+				for (auto&& e : relayEntry.second)
+					initialPacket[relayEntry.first]["commands"].push_back(std::move(e));
 	};
 
 	m_CreateCommands.clear(); // clear old create commands.
-	modifyEntry({ "gateway", "relay"}, "channels", { "AddChannel", "AddNegotiationChannel" }, true);
+	modifyEntry({ "gateway", "relay" }, "channels", { "AddChannel", "AddNegotiationChannel" }, true);
 	modifyEntry({ "gateway", "relay" }, "peripherals", { "AddPeripheral" }, true);
 	modifyEntry({ "gateway" }, "connectors", { "TurnOnConnector" }, false);
 

