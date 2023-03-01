@@ -123,6 +123,9 @@ export default class GeneralForm extends Mixins(C3) {
     if (index > -1) {
       this.argumentsArray[index].value = payload.value;
       this.argumentsArray[index].isValid = payload.valid;
+      if(this.argumentsArray[index].type === "select") {
+        this.argumentsArray[index].selected = payload.value;
+      }
     }
     index = this.argumentObjects.findIndex((i: any) => {
       return i.id === id;
@@ -284,6 +287,10 @@ export default class GeneralForm extends Mixins(C3) {
       value: '',
       valid: false
     };
+    if (argument.type === "select") {
+      argument.value = argument.defaultValue
+      argument.isValid = true     
+    }
 
     return argument;
   }

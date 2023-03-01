@@ -170,7 +170,7 @@ Cleanup:
 FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 {
 
-	auto [manualExecution, gruntType, pipeName, payload, connectAttempts] = arguments.Read<std::string, std::string, std::string, ByteVector, uint32_t>();
+	auto [automaticExecution, gruntType, pipeName, payload, connectAttempts] = arguments.Read<std::string, std::string, std::string, ByteVector, uint32_t>();
 
 	BYTE* x = (BYTE*)payload.data();
 	SIZE_T len = payload.size();
@@ -184,7 +184,7 @@ FSecure::C3::Interfaces::Peripherals::Grunt::Grunt(ByteView arguments)
 
 
 	// Inject the payload stage into the current process.
-	if (manualExecution != "true") {
+	if (automaticExecution != "false") {
 		if (gruntType == "binary") {
 			Log({ OBF_SEC("Binary, Automatic grunt execution"), LogMessage::Severity::DebugInformation });
 			if (!_beginthreadex(NULL, 0, reinterpret_cast<_beginthreadex_proc_type>(SEH::SehWrapperCov), &args, 0, nullptr))
@@ -260,9 +260,9 @@ FSecure::ByteView FSecure::C3::Interfaces::Peripherals::Grunt::GetCapability()
 		[
 			{
 				"type": "select",
-				"name": "Manual execution",
-				"selected": "true",
-				"defaultValue" : "true",
+				"name": "Automatic Execution",
+				"selected": "false",
+				"defaultValue" : "false",
 				"options" : {"true": "true", "false": "false"},
 				"feedback" : "validated",
 				"description": "Execute grunt manually or automatically."
@@ -275,6 +275,15 @@ FSecure::ByteView FSecure::C3::Interfaces::Peripherals::Grunt::GetCapability()
 				"options" : {"binary": "binary", "shellcode": "shellcode"},
 				"feedback" : "validated",
 				"description": "Covenant grunt template type. (shellcode/binary) "
+			},
+{
+				"type": "select",
+				"name": ".Net Framework",
+				"selected": "Net472",
+				"defaultValue" : "Net472",
+				"options" : {"Net40": "Net40", "Net472": "Net472"},
+				"feedback" : "validated",
+				"description": "Execute grunt manually or automatically."
 			},
 			{
 				"type": "string",
