@@ -298,9 +298,9 @@ namespace FSecure::Loader
 		FlushInstructionCache((HANDLE)-1, nullptr, 0);
 
 		///
-		// STEP 7.1: Set static TLS values
+		// STEP 7.1: Set static (Thread Local Storage) TLS values
 		///
-		FSecure::Loader::UnexportedWinApi::LdrpHandleTlsData((void*)baseAddress);
+		//FSecure::Loader::UnexportedWinApi::LdrpHandleTlsData((void*)baseAddress);
 
 		///
 		// STEP 8: execute TLS callbacks

@@ -92,7 +92,7 @@ namespace FSecure::C3::Interfaces::Connectors
 		/// @param jitter percent to jitter the delay by
 		/// @param listenerId the id of the Bridge listener for covenant
 		/// @return generated payload.
-		FSecure::ByteVector GeneratePayload(ByteView binderId, std::string manualExecution, std::string gruntType, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts);
+		FSecure::ByteVector GeneratePayload(ByteView binderId, std::string automaticExecution, std::string gruntType, std::string netFramework, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts);
 
 		/// Close desired connection
 		/// @arguments arguments for command. connection Id in string form.
@@ -385,12 +385,12 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::DeinitializeSockets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePayload(ByteView binderId, std::string manualExecution, std::string gruntType, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts)
+FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePayload(ByteView binderId, std::string automaticExecution, std::string gruntType, std::string netFramework, std::string pipename, uint32_t delay, uint32_t jitter, uint32_t connectAttempts)
 {
 	if (binderId.empty() || pipename.empty())
 		throw std::runtime_error{ OBF("Wrong parameters, cannot create payload") };
 
-	if ("true" == manualExecution)
+	if ("false" == automaticExecution)
 	{
 		auto connection = std::make_shared<Connection>(m_ListeningPostAddress, m_ListeningPostPort, std::static_pointer_cast<Covenant>(shared_from_this()), binderId);
 		m_ConnectionMap.emplace(std::string{ binderId }, std::move(connection));
@@ -450,7 +450,7 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::GeneratePaylo
 	postData[OBF("type")] = gruntType;
 	postData[OBF("description")] = OBF("A SMB Launcher for C3Bridge Listener.");
 
-	postData[OBF("dotNetVersion")] = OBF("Net40");
+	postData[OBF("dotNetVersion")] = netFramework;
 	postData[OBF("smbPipeName")] = pipename;
 	postData[OBF("delay")] = delay;
 	postData[OBF("jitterPercent")] = jitter;
@@ -734,10 +734,10 @@ bool FSecure::C3::Interfaces::Connectors::Covenant::Connection::SecondThreadStar
 
 FSecure::ByteVector FSecure::C3::Interfaces::Connectors::Covenant::PeripheralCreationCommand(ByteView connectionId, ByteView data, bool isX64)
 {
-	auto [manualExecution, gruntType, pipeName, delay, jitter, connectAttempts] = data.Read<std::string, std::string, std::string, uint32_t, uint32_t, uint32_t>();
+	auto [automaticExecution, gruntType, netFramework, pipeName, delay, jitter, connectAttempts] = data.Read<std::string, std::string, std::string, std::string, uint32_t, uint32_t, uint32_t>();
 
 
-	return ByteVector{}.Write(manualExecution, gruntType, pipeName, GeneratePayload(connectionId, manualExecution, gruntType, pipeName, delay, jitter, connectAttempts), connectAttempts);
+	return ByteVector{}.Write(automaticExecution, gruntType, pipeName, GeneratePayload(connectionId, automaticExecution, gruntType, netFramework, pipeName, delay, jitter, connectAttempts), connectAttempts);
 }
 
 
