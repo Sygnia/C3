@@ -281,7 +281,7 @@ FSecure::ByteView FSecure::C3::Interfaces::Peripherals::Grunt::GetCapability()
 				"name": ".Net Framework",
 				"selected": "Net472",
 				"defaultValue" : "Net472",
-				"options" : {"Net40": "Net40", "Net472": "Net472"},
+				"options" : {"Net40": "Net40", "Net472": "Net472", "Net35": "Net35"},
 				"feedback" : "validated",
 				"description": "Execute grunt manually or automatically."
 			},
