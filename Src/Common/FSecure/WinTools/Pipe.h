@@ -1,6 +1,8 @@
 #pragma once
 
 #include "UniqueHandle.h"
+#include <csignal>
+
 
 namespace FSecure::WinTools
 {
@@ -128,5 +130,52 @@ namespace FSecure::WinTools
 		
 		/// Output pipe.
 		WritePipe m_OutputPipe;
+	};
+
+	/// Class using one pipe, with async callbacks
+	///
+	/// Objects of PipeHelper should be used in pairs on both sides of communication.
+	/// Methods of this class does not introduce new threads. Use external thread objects to preform asynchronous communication.
+	class AsyncPipe
+	{
+#define BUFFER_SIZE 30000
+	public:
+		AsyncPipe(ByteView pipeName);
+		void OnReceive();
+		void AsyncRead();
+		void AsyncReadThread();
+		//void AsyncWrite(std::vector<unsigned char>);
+		void AsyncWrite(ByteView data);
+		void Start();
+
+		//void DeserializeToReceiverQueue(ChunkedMessage::ChunkMessageEventArgs<Messages::ApolloIPCChunked> args);
+
+		//VOID CALLBACK onAsyncMessageReceieved(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped);
+		
+		
+		//std::condition_variable* senderEvent;
+		//std::mutex* eventMutex;
+		LPVOID readBuffer;
+		std::vector<char> lastMsg;
+		bool ready;
+		std::queue<std::string> messageQueue;
+
+	private:
+		std::thread threadObj;
+		HANDLE alertEvent;
+		std::string m_PipeName;
+		HANDLE hPipe;
+		
+		OVERLAPPED overlappedRead;
+		OVERLAPPED overlappedWrite;
+		bool _connected;
+		int message_type = 16;
+		//std::queue<std::vector<uint8_t>> _senderQueue;
+		
+		
+		//ConcurrentDictionary::ConcurrentQueue<byte[]> _receiverQueue;
+		//ConcurrentDictionary::ConcurrentDictionary<std::string, std::shared_ptr<ChunkedMessage::ChunkedMessageStore<Messages::ApolloIPCChunked>>> messageStore;
+
+		static VOID CALLBACK ReadCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped);
 	};
 }

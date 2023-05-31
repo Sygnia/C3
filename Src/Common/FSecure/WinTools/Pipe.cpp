@@ -277,3 +277,142 @@ size_t FSecure::WinTools::AlternatingPipe::Write(ByteView data)
 	return data.size();
 }
 
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+FSecure::WinTools::AsyncPipe::AsyncPipe(ByteView pipeName) : m_PipeName(OBF("\\\\.\\pipe\\") + std::string{ pipeName })
+{
+	// Connect to the named pipe server
+	this->hPipe = CreateFileA(
+		this->m_PipeName.c_str(),                       // Pipe name
+		GENERIC_READ | GENERIC_WRITE,   // Desired access
+		0,                              // Share mode (0 = not shared)
+		NULL,                           // Security attributes
+		OPEN_EXISTING,                  // Creation disposition
+		FILE_FLAG_OVERLAPPED,           // Flags and attributes (overlapped I/O)
+		NULL                            // Template file handle (not used for pipes)
+	);
+
+	if (this->hPipe == INVALID_HANDLE_VALUE)
+	{
+		std::cerr << "Failed to connect to named pipe. Error code: " << GetLastError() << std::endl;
+		throw std::runtime_error{ OBF("Couldn't open named") };
+	}
+
+	this->alertEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	if (alertEvent == nullptr)
+	{
+		std::cerr << "Failed to create alert event. Error code: " << GetLastError() << std::endl;
+		// Handle the error as needed
+	}
+
+	std::cout << "Connected to named pipe server." << std::endl;
+	
+	/*try {
+		std::thread(&AsyncPipe::AsyncRead, this).detach();
+	}
+	catch (std::exception& e)
+	{
+		std::cout << e.what() << std::endl;
+	}*/
+}
+
+VOID CALLBACK FSecure::WinTools::AsyncPipe::ReadCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
+{
+	return;
+	AsyncPipe* instance = reinterpret_cast<AsyncPipe*>(lpOverlapped->hEvent);
+	if (dwErrorCode == 0)
+	{
+		// Read operation completed successfully
+		//char* buffer = reinterpret_cast<char*>(lpOverlapped->hEvent);
+		// 
+		//std::cout << "Received data: " << instance->readBuffer << std::endl;
+
+		//instance->lastMsg = std::vector<char>(instance->readBuffer, instance->readBuffer + dwNumberOfBytesTransfered);
+
+		std::cout << "Received data: " << instance->lastMsg.data() << std::endl;
+		//instance->_senderQueue.emplace(instance->readBuffer);
+		//instance->senderEvent->notify_one();
+		instance->ready = true;
+		instance->messageQueue.push(std::string(instance->lastMsg.begin(), instance->lastMsg.end()));
+		
+	}
+	else
+	{
+		// Read operation failed
+		std::cerr << "Read operation failed with error code: " << dwErrorCode << std::endl;
+	}
+}
+
+void FSecure::WinTools::AsyncPipe::AsyncWrite(ByteView data)
+{
+	auto datastring = std::string(data);
+
+	WriteFile(
+		this->hPipe,
+		datastring.c_str(),
+		static_cast<DWORD>(datastring.size()),
+		nullptr,
+		nullptr
+	);
+}
+
+void FSecure::WinTools::AsyncPipe::AsyncRead() 
+{
+	std::thread readThread(&AsyncPipe::AsyncReadThread, this);
+	readThread.detach();
+}
+
+void FSecure::WinTools::AsyncPipe::AsyncReadThread()
+{
+	try {
+		// Create overlapped structure for read operation
+		ZeroMemory(&this->overlappedRead, sizeof(this->overlappedRead));
+		this->overlappedRead.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr); // Use the read buffer as the event handle
+		this->readBuffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BUFFER_SIZE);
+		/*this->readBuffer = new char[BUFFER_SIZE];
+		memset(this->readBuffer, 0, BUFFER_SIZE);*/
+
+		while (true) {
+			// TODO: Close thread and kill instance when pipe is broken
+			
+			//this->overlappedRead.hEvent = reinterpret_cast<HANDLE>(this); // Use the read buffer as the event handle
+			
+			// Perform asynchronous read operation
+			BOOL isReadPending = ReadFileEx(
+				this->hPipe,                          // Pipe handle
+				this->readBuffer,                     // Buffer to read into
+				BUFFER_SIZE,                    // Number of bytes to read
+				&this->overlappedRead,                // Overlapped structure
+				ReadCompletionRoutine           // Completion routine
+			);
+
+			if (!isReadPending)
+			{
+				std::cerr << "Failed to initiate read operation. Error code: " << GetLastError() << std::endl;
+				//delete[] readBuffer;
+				//CloseHandle(this->hPipe);
+			}
+			
+			// Wait for the completion routine to be called
+			DWORD result = WaitForSingleObjectEx(this->overlappedRead.hEvent, INFINITE, TRUE);
+			//DWORD result = SleepEx(INFINITE, TRUE);
+			std::cout << "result of wait: " << result << std::endl;
+			DWORD byteRead;
+			BOOL oresult = GetOverlappedResult(hPipe, &this->overlappedRead, &byteRead, FALSE);
+			std::cout << "debug print " << std::endl;
+			std::string rd(reinterpret_cast<char*>(this->readBuffer), byteRead);
+			this->messageQueue.push(rd);
+		}
+	}
+	catch (std::exception& e)
+	{
+		std::cout << e.what() << std::endl;
+	}
+	catch (...) {
+		std::cout << "Unknown exception occured" << std::endl;
+	}
+	// Clean up
+	//delete[] readBuffer;
+	//CloseHandle(this->hPipe);
+}
