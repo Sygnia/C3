@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <metahost.h>
+
 #include "Common/FSecure/WinTools/Pipe.h"
 
 /// Forward declaration of Connector associated with implant.

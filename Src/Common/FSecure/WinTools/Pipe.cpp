@@ -307,19 +307,32 @@ FSecure::WinTools::AsyncPipe::AsyncPipe(ByteView pipeName) : m_PipeName(OBF("\\\
 	}
 
 	std::cout << "Connected to named pipe server." << std::endl;
+}
+
+void FSecure::WinTools::AsyncPipe::DeserializeToReceiverQueue(FSecure::C3::Interfaces::Connectors::Messages::ChunkMessageEventArgs<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked> args)
+{
+	std::string fullMsg = "";
 	
-	/*try {
-		std::thread(&AsyncPipe::AsyncRead, this).detach();
+	// For loop to iterate the chunks
+	for (int i = 0; i < args.GetMessages().size(); i++) {
+		auto decoded = base64::decode<std::string>(args.GetMessages()[i].data);
+		fullMsg += decoded;
 	}
-	catch (std::exception& e)
-	{
-		std::cout << e.what() << std::endl;
-	}*/
+	if (args.GetMessages()[0].message_type == 15) {
+		this->message_type = 16;
+	}
+	else {
+		this->message_type = 19;
+	}
+
+	// TODO: Add to receiver queue
+	this->messageQueue.push(fullMsg);
 }
 
 VOID CALLBACK FSecure::WinTools::AsyncPipe::ReadCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
 {
 	return;
+	// TOOD: Need to get pointer to relevant instance
 	AsyncPipe* instance = reinterpret_cast<AsyncPipe*>(lpOverlapped->hEvent);
 	if (dwErrorCode == 0)
 	{
@@ -336,6 +349,16 @@ VOID CALLBACK FSecure::WinTools::AsyncPipe::ReadCompletionRoutine(DWORD dwErrorC
 		instance->ready = true;
 		instance->messageQueue.push(std::string(instance->lastMsg.begin(), instance->lastMsg.end()));
 		
+		// TODO: use chunk message struct to follow message completion
+		json msg = json::parse(std::string("this is a commad"));
+		FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked msgObj = msg.get<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>();
+
+		if (instance->messageStore.ContainsKey(msgObj.id)) {
+			std::shared_ptr<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>> nmsg = std::make_shared<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>>();
+			instance->messageStore.Add(msgObj.id, nmsg);
+			instance->messageStore[msgObj.id]->MessageComplete = [&instance](FSecure::C3::Interfaces::Connectors::Messages::ChunkMessageEventArgs<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked> args) {instance->DeserializeToReceiverQueue(args);};
+		}
+		instance->messageStore[msgObj.id]->AddMessage(msgObj);
 	}
 	else
 	{
@@ -348,13 +371,39 @@ void FSecure::WinTools::AsyncPipe::AsyncWrite(ByteView data)
 {
 	auto datastring = std::string(data);
 
-	WriteFile(
-		this->hPipe,
-		datastring.c_str(),
-		static_cast<DWORD>(datastring.size()),
-		nullptr,
-		nullptr
-	);
+	int chunkLength = 15000;
+	int totalChunks = data.length() / chunkLength + 1;
+	UUID uuid;
+	UuidCreate(&uuid);
+	char* uuidstr;
+	UuidToStringA(&uuid, (RPC_CSTR*)&uuidstr);
+	std::string uuids(uuidstr);
+
+	for (int i = 0; i < totalChunks; i++) {
+		// Construct message
+		FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked msg;
+		msg.id = uuids;
+		msg.message_type = this->message_type;
+		msg.chunk_number = i + 1;
+		msg.total_chunks = totalChunks;
+
+		std::string chunk = datastring.substr(i * chunkLength, chunkLength);
+		//std::string datan(resp.begin(), resp.end());
+		msg.data = base64::encode(chunk);
+		json msgjson = msg;
+		std::string msgserialized = msgjson.dump();
+
+		
+		WriteFile(
+			this->hPipe,
+			msgserialized.c_str(),
+			static_cast<DWORD>(msgserialized.size()),
+			nullptr,
+			nullptr
+		);
+		Sleep(1000);
+	}
+
 }
 
 void FSecure::WinTools::AsyncPipe::AsyncRead() 
@@ -402,7 +451,24 @@ void FSecure::WinTools::AsyncPipe::AsyncReadThread()
 			BOOL oresult = GetOverlappedResult(hPipe, &this->overlappedRead, &byteRead, FALSE);
 			std::cout << "debug print " << std::endl;
 			std::string rd(reinterpret_cast<char*>(this->readBuffer), byteRead);
-			this->messageQueue.push(rd);
+			//this->messageQueue.push(rd);
+
+			// TODO: Move from here
+			json msg;
+			try 
+			{
+				msg = json::parse(rd);
+			}
+			catch (...) { continue; }
+
+			FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked msgObj = msg.get<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>();
+
+			if (!this->messageStore.ContainsKey(msgObj.id)) {
+				std::shared_ptr<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>> nmsg = std::make_shared<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>>();
+				this->messageStore.Add(msgObj.id, nmsg);
+				this->messageStore[msgObj.id]->MessageComplete = std::bind(&AsyncPipe::DeserializeToReceiverQueue, this, std::placeholders::_1);
+			}
+			this->messageStore[msgObj.id]->AddMessage(msgObj);
 		}
 	}
 	catch (std::exception& e)

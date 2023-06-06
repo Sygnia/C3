@@ -32,10 +32,12 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Channels\MSSQL.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Connectors\MockServer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Connectors\Covenant.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Connectors\MythicServer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Connectors\TeamServer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Peripherals\Mock.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Peripherals\Beacon.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Peripherals\Grunt.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Peripherals\Mythic.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Internals\Interface.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\C3\Internals\InterfaceFactory.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FSecure\CppTools\Compression.cpp" />
@@ -82,6 +84,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Channels\Github.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Channels\Mattermost.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Channels\Print.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Connectors\Structs.cpp" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Connectors\Structs.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\C3\Interfaces\Peripherals\Mythic.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\CppTools\ByteConverter\ByteArray.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\CppTools\ByteConverter\ByteConverter.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)FSecure\CppTools\ByteConverter\ByteVector.h" />
