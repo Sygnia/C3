@@ -6,8 +6,6 @@
 #include "Common/FSecure/Crypto/Base64.h"
 #pragma comment(lib, "rpcrt4.lib") 
 #include <rpc.h>
-#include "Common/FSecure/C3/Interfaces/Connectors/Structs.h"
-
 
 namespace FSecure::WinTools
 {
@@ -143,6 +141,14 @@ namespace FSecure::WinTools
 	/// Methods of this class does not introduce new threads. Use external thread objects to preform asynchronous communication.
 	class AsyncPipe
 	{
+		using ApolloIPCChunked = FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked;
+		template <typename T>
+		using ChunkMessageEventArgs = FSecure::C3::Interfaces::Connectors::Messages::ChunkMessageEventArgs<T>;
+		template <typename T>
+		using ChunkedMessageStore = FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<T>;
+		template<typename Key, typename Value>
+		using  ConcurrentDictionary = FSecure::C3::Interfaces::Connectors::Messages::ConcurrentDictionary<Key, Value>;
+
 #define BUFFER_SIZE 30000
 	public:
 		AsyncPipe(ByteView pipeName);
@@ -152,7 +158,7 @@ namespace FSecure::WinTools
 		//void AsyncWrite(std::vector<unsigned char>);
 		void AsyncWrite(ByteView data);
 		void Start();
-		void DeserializeToReceiverQueue(FSecure::C3::Interfaces::Connectors::Messages::ChunkMessageEventArgs<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked> args);
+		void DeserializeToReceiverQueue(ChunkMessageEventArgs<ApolloIPCChunked> args);
 
 		//void DeserializeToReceiverQueue(ChunkedMessage::ChunkMessageEventArgs<Messages::ApolloIPCChunked> args);
 
@@ -165,7 +171,7 @@ namespace FSecure::WinTools
 		std::vector<char> lastMsg;
 		bool ready;
 		std::queue<std::string> messageQueue;
-		FSecure::C3::Interfaces::Connectors::Messages::ConcurrentDictionary< std::string, std::shared_ptr<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>>> messageStore;
+		ConcurrentDictionary< std::string, std::shared_ptr<ChunkedMessageStore<ApolloIPCChunked>>> messageStore;
 		int message_type = 16;
 		
 
@@ -176,7 +182,6 @@ namespace FSecure::WinTools
 		HANDLE hPipe;
 		
 		OVERLAPPED overlappedRead;
-		OVERLAPPED overlappedWrite;
 		bool _connected;
 		//int message_type;
 		//std::queue<std::vector<uint8_t>> _senderQueue;

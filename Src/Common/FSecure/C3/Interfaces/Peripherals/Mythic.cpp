@@ -32,15 +32,14 @@ FSecure::C3::Interfaces::Peripherals::Mythic::Mythic(ByteView arguments)
 			throw std::runtime_error{ OBF("Couldn't run payload: ") + std::to_string(GetLastError()) + OBF(".") };
 	}
 
-	std::this_thread::sleep_for(std::chrono::milliseconds{ 30 }); // Give Agent thread time to start pipe.
+	// Give Agent thread time to start pipe.
+	std::this_thread::sleep_for(std::chrono::milliseconds{ 30 }); 
 	for (auto i = 0u; i < connectAttempts; i++)
 	{
 		try
 		{
 			m_Pipe = WinTools::AsyncPipe{ ByteView{ pipeName } };
 			m_Pipe->AsyncRead();
-			//m_Pipe = WinTools::AlternatingPipe{ ByteView{ pipeName + "w" } };
-			//m_Pipew = WinTools::AlternatingPipe{ ByteView{ pipeName } };
 			return;
 		}
 		catch (std::exception& e)
@@ -59,7 +58,6 @@ void FSecure::C3::Interfaces::Peripherals::Mythic::OnCommandFromConnector(ByteVi
 	// Construct a copy of received packet trimmed to 10 characters and add log it.
 	Log({ OBF("Mythic received: ") + std::string{ packet.begin(), packet.size() < 10 ? packet.end() : packet.begin() + 10 } + OBF("..."), LogMessage::Severity::DebugInformation });
 
-	Log({ OBF("Mythic received: ") + std::string{ packet.begin(), packet.end()} + OBF("..."), LogMessage::Severity::DebugInformation });
 
 	m_Pipe->AsyncWrite(packet);
 }
@@ -67,35 +65,15 @@ void FSecure::C3::Interfaces::Peripherals::Mythic::OnCommandFromConnector(ByteVi
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 FSecure::ByteVector FSecure::C3::Interfaces::Peripherals::Mythic::OnReceiveFromPeripheral()
 {
-	/*std::unique_lock<std::mutex> lock(*m_Pipe->eventMutex);
-	m_Pipe->senderEvent->wait(lock);*/
-	//auto data = this->m_Pipe->_senderQueue.front();
-	// 
-	// 
-	//m_Pipe->AsyncRead();
-	/*if (m_Pipe->ready)
-	{
-		m_Pipe->ready = false;
-		std::string_view strView(m_Pipe->lastMsg.data(), m_Pipe->lastMsg.size());
-
-		return ByteView(strView);
-	}*/
-	
+	// Mythic using async pipe, received messages will be stored inside a queue
 	if (m_Pipe->messageQueue.size() > 0) {
 		std::string message = m_Pipe->messageQueue.front();
 		m_Pipe->messageQueue.pop();
 		std::string_view strView(message.data(), message.size());
 		return ByteView(strView);
 	}
-	m_NextMessageTime = std::chrono::high_resolution_clock::now() + 5s;
+	
 	return {};
-	// Send heart beat every 5s.
-	//if (m_NextMessageTime > std::chrono::high_resolution_clock::now())
-	//	return {};
-
-	//m_NextMessageTime = std::chrono::high_resolution_clock::now() + 5s;
-
-	////return  ByteView{ OBF("Beep") };
 }
 
 FSecure::ByteVector FSecure::C3::Interfaces::Peripherals::Mythic::OnRunCommand(ByteView command)

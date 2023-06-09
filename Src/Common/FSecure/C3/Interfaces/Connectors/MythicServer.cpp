@@ -3,9 +3,7 @@
 #include "Common/CppRestSdk/include/cpprest/http_client.h"
 #include "Common/FSecure/Crypto/Base64.h"
 #include "Structs.h"
-#pragma comment(lib, "rpcrt4.lib") 
 #include <iostream>
-#include <rpc.h>
 
 using json = nlohmann::json;
 
@@ -94,10 +92,19 @@ namespace FSecure::C3::Interfaces::Connectors
 		};
 
 		/// Mythic bridge port
-		std::string m_ListenPort;
+		std::string m_bridgeHost;
 
 		/// Mythic host
 		std::string m_webHost;
+
+		///Mythic username
+		std::string m_username;
+
+		///Mythic password
+		std::string m_password;
+
+		///API token, generated on logon.
+		std::string m_token;
 		
 		/// Access blocker for m_ConnectionMap.
 		std::mutex m_ConnectionMapAccess;
@@ -119,7 +126,7 @@ std::string FSecure::C3::Interfaces::Connectors::MythicServer::sendToMythic(std:
 	web::http::http_response response;
 	web::uri_builder uri;
 	std::string data;
-	std::string url = this->m_webHost + OBF("/data");
+	std::string url = this->m_bridgeHost + OBF("/data");
 
 	config.set_validate_certificates(false);
 	web::http::http_request request(web::http::methods::POST);
@@ -148,11 +155,41 @@ std::string FSecure::C3::Interfaces::Connectors::MythicServer::sendToMythic(std:
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 FSecure::C3::Interfaces::Connectors::MythicServer::MythicServer(ByteView arguments)
 {
-	std::tie(m_ListenPort, m_webHost) = arguments.Read<uint16_t, std::string>();
+	json postData;
+	json response;
+
+	std::tie(m_bridgeHost, m_webHost, m_username, m_password) = arguments.Read<std::string, std::string, std::string, std::string>();
 
 	// if the last character is '/' remove it
 	if (this->m_webHost.back() == '/')
 		this->m_webHost.pop_back();
+
+	// Authenticat
+	std::string url = this->m_webHost + OBF("/auth");
+	postData[OBF("username")] = this->m_username;
+	postData[OBF("password")] = this->m_password;
+
+	web::http::client::http_client_config config;
+	config.set_validate_certificates(false);
+
+	web::http::client::http_client webClient(utility::conversions::to_string_t(url), config);
+	web::http::http_request request(web::http::methods::POST);
+	request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/json")));
+	request.set_body(utility::conversions::to_string_t(postData.dump()));
+
+	pplx::task<web::http::http_response> task = webClient.request(request);
+	web::http::http_response resp = task.get();
+
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto respData = resp.extract_string();
+		response = json::parse(respData.get());
+		this->m_token = response[OBF("access_token")].get<std::string>();
+	}
+	else {
+		throw std::exception((OBF("[Mythic] Error authenticating, resp: ") + std::to_string(resp.status_code())).c_str());
+	}		
+
 }
 
 void FSecure::C3::Interfaces::Connectors::MythicServer::Send(ByteView data)
@@ -256,6 +293,37 @@ FSecure::ByteVector FSecure::C3::Interfaces::Connectors::MythicServer::TestError
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+void Generate() 
+{
+	// TODO: Complete autoamted payload generation
+	//std::string authHeader = OBF("Bearer ") + this->m_token;
+	std::string authHeader = OBF("Bearer ");
+	std::string contentHeader = OBF("Content-Type: application/json");
+
+	web::http::client::http_client_config config;
+	config.set_validate_certificates(false);
+
+	web::http::http_request request;
+	request.headers().set_content_type(utility::conversions::to_string_t(OBF("application/json")));
+	request.headers().add(OBF(L"Authorization"), utility::conversions::to_string_t(authHeader));
+
+	json variables;
+	variables[OBF("payload")][OBF("selected_os")] = OBF("Windows");
+	variables[OBF("payload")][OBF("payload_type")] = OBF("apollo");
+	variables[OBF("payload")][OBF("filename")] = OBF("Apollo_C3_Generated");
+	variables[OBF("payload")][OBF("description")] = OBF("This payload was issued by C3");
+	variables[OBF("payload")][OBF("commands")] = OBF("This payload was issued by C3");
+	variables[OBF("payload")][OBF("build_parameters")] = OBF("This payload was issued by C3");
+	variables[OBF("payload")][OBF("c2_profiles")] = OBF("This payload was issued by C3");
+
+	json postData;
+	postData[OBF("operationName")] = OBF("createPayloadMutation");
+	postData[OBF("variables")] = variables;
+	postData[OBF("query")] = OBF("createPayloadMutation");
+
+
+}
+
 FSecure::ByteVector FSecure::C3::Interfaces::Connectors::MythicServer::GeneratePayload(ByteView binderId, std::string payloadUrl, std::string automaticExecution)
 {
 	if(binderId.empty())
@@ -316,19 +384,18 @@ const char* FSecure::C3::Interfaces::Connectors::MythicServer::GetCapability()
 		"arguments":
 		[
 			{
-				"type": "uint16",
-				"name": "C2BridgePort",
-				"min": 2,
-				"defaultValue": 8000,
-				"randomize": true,
-				"description": "The port for the C2Bridge Listener if it doesn't already exist."
+				"type": "string",
+				"name": "Mythic C3 Prfoile endpoint",
+				"min": 1,
+				"defaultValue": "http://mythic:8000/",
+				"description": "Mythic C3 profile listening endpoint - eg http://127.0.0.1:8000/"
 			},
 			{
 				"type": "string",
 				"name": "Mythic Web Host",
 				"min": 1,
-				"defaultValue": "https://127.0.0.1:7443/",
-				"description": "Host for Mythic - eg https://127.0.0.1:7443/"
+				"defaultValue": "https://mythic:7443/",
+				"description": "Mythic admin endpoint - eg https://127.0.0.1:7443/"
 			},
 			{
 				"type": "string",

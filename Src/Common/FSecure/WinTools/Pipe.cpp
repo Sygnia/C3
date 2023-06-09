@@ -295,18 +295,8 @@ FSecure::WinTools::AsyncPipe::AsyncPipe(ByteView pipeName) : m_PipeName(OBF("\\\
 
 	if (this->hPipe == INVALID_HANDLE_VALUE)
 	{
-		std::cerr << "Failed to connect to named pipe. Error code: " << GetLastError() << std::endl;
-		throw std::runtime_error{ OBF("Couldn't open named") };
+		throw std::runtime_error{ OBF("Couldn't open named, reason: ") + GetLastError() };
 	}
-
-	this->alertEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-	if (alertEvent == nullptr)
-	{
-		std::cerr << "Failed to create alert event. Error code: " << GetLastError() << std::endl;
-		// Handle the error as needed
-	}
-
-	std::cout << "Connected to named pipe server." << std::endl;
 }
 
 void FSecure::WinTools::AsyncPipe::DeserializeToReceiverQueue(FSecure::C3::Interfaces::Connectors::Messages::ChunkMessageEventArgs<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked> args)
@@ -336,27 +326,15 @@ VOID CALLBACK FSecure::WinTools::AsyncPipe::ReadCompletionRoutine(DWORD dwErrorC
 	AsyncPipe* instance = reinterpret_cast<AsyncPipe*>(lpOverlapped->hEvent);
 	if (dwErrorCode == 0)
 	{
-		// Read operation completed successfully
-		//char* buffer = reinterpret_cast<char*>(lpOverlapped->hEvent);
-		// 
-		//std::cout << "Received data: " << instance->readBuffer << std::endl;
-
-		//instance->lastMsg = std::vector<char>(instance->readBuffer, instance->readBuffer + dwNumberOfBytesTransfered);
-
-		std::cout << "Received data: " << instance->lastMsg.data() << std::endl;
-		//instance->_senderQueue.emplace(instance->readBuffer);
-		//instance->senderEvent->notify_one();
-		instance->ready = true;
 		instance->messageQueue.push(std::string(instance->lastMsg.begin(), instance->lastMsg.end()));
 		
-		// TODO: use chunk message struct to follow message completion
 		json msg = json::parse(std::string("this is a commad"));
-		FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked msgObj = msg.get<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>();
+		ApolloIPCChunked msgObj = msg.get<ApolloIPCChunked>();
 
 		if (instance->messageStore.ContainsKey(msgObj.id)) {
-			std::shared_ptr<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>> nmsg = std::make_shared<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>>();
+			std::shared_ptr<ChunkedMessageStore<ApolloIPCChunked>> nmsg = std::make_shared<ChunkedMessageStore<ApolloIPCChunked>>();
 			instance->messageStore.Add(msgObj.id, nmsg);
-			instance->messageStore[msgObj.id]->MessageComplete = [&instance](FSecure::C3::Interfaces::Connectors::Messages::ChunkMessageEventArgs<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked> args) {instance->DeserializeToReceiverQueue(args);};
+			instance->messageStore[msgObj.id]->MessageComplete = [&instance](ChunkMessageEventArgs<ApolloIPCChunked> args) {instance->DeserializeToReceiverQueue(args);};
 		}
 		instance->messageStore[msgObj.id]->AddMessage(msgObj);
 	}
@@ -369,6 +347,7 @@ VOID CALLBACK FSecure::WinTools::AsyncPipe::ReadCompletionRoutine(DWORD dwErrorC
 
 void FSecure::WinTools::AsyncPipe::AsyncWrite(ByteView data)
 {
+	// TODO: Move this logic into other place
 	auto datastring = std::string(data);
 
 	int chunkLength = 15000;
@@ -417,16 +396,14 @@ void FSecure::WinTools::AsyncPipe::AsyncReadThread()
 	try {
 		// Create overlapped structure for read operation
 		ZeroMemory(&this->overlappedRead, sizeof(this->overlappedRead));
-		this->overlappedRead.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr); // Use the read buffer as the event handle
+		// Use the read buffer as the event handle
+		this->overlappedRead.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr); 
 		this->readBuffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BUFFER_SIZE);
-		/*this->readBuffer = new char[BUFFER_SIZE];
-		memset(this->readBuffer, 0, BUFFER_SIZE);*/
+
 
 		while (true) {
 			// TODO: Close thread and kill instance when pipe is broken
-			
-			//this->overlappedRead.hEvent = reinterpret_cast<HANDLE>(this); // Use the read buffer as the event handle
-			
+						
 			// Perform asynchronous read operation
 			BOOL isReadPending = ReadFileEx(
 				this->hPipe,                          // Pipe handle
@@ -438,20 +415,15 @@ void FSecure::WinTools::AsyncPipe::AsyncReadThread()
 
 			if (!isReadPending)
 			{
-				std::cerr << "Failed to initiate read operation. Error code: " << GetLastError() << std::endl;
-				//delete[] readBuffer;
-				//CloseHandle(this->hPipe);
+				throw std::runtime_error{ OBF("Failed to initiate read operation. Error code: ") + GetLastError() };
+				break;
 			}
 			
 			// Wait for the completion routine to be called
 			DWORD result = WaitForSingleObjectEx(this->overlappedRead.hEvent, INFINITE, TRUE);
-			//DWORD result = SleepEx(INFINITE, TRUE);
-			std::cout << "result of wait: " << result << std::endl;
 			DWORD byteRead;
 			BOOL oresult = GetOverlappedResult(hPipe, &this->overlappedRead, &byteRead, FALSE);
-			std::cout << "debug print " << std::endl;
 			std::string rd(reinterpret_cast<char*>(this->readBuffer), byteRead);
-			//this->messageQueue.push(rd);
 
 			// TODO: Move from here
 			json msg;
@@ -461,10 +433,10 @@ void FSecure::WinTools::AsyncPipe::AsyncReadThread()
 			}
 			catch (...) { continue; }
 
-			FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked msgObj = msg.get<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>();
+			ApolloIPCChunked msgObj = msg.get<ApolloIPCChunked>();
 
 			if (!this->messageStore.ContainsKey(msgObj.id)) {
-				std::shared_ptr<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>> nmsg = std::make_shared<FSecure::C3::Interfaces::Connectors::Messages::ChunkedMessageStore<FSecure::C3::Interfaces::Connectors::Messages::ApolloIPCChunked>>();
+				std::shared_ptr<ChunkedMessageStore<ApolloIPCChunked>> nmsg = std::make_shared<ChunkedMessageStore<ApolloIPCChunked>>();
 				this->messageStore.Add(msgObj.id, nmsg);
 				this->messageStore[msgObj.id]->MessageComplete = std::bind(&AsyncPipe::DeserializeToReceiverQueue, this, std::placeholders::_1);
 			}
@@ -476,9 +448,10 @@ void FSecure::WinTools::AsyncPipe::AsyncReadThread()
 		std::cout << e.what() << std::endl;
 	}
 	catch (...) {
-		std::cout << "Unknown exception occured" << std::endl;
+		throw std::runtime_error{ OBF("Unknown exception occured") };
 	}
 	// Clean up
-	//delete[] readBuffer;
-	//CloseHandle(this->hPipe);
+	HeapFree(GetProcessHeap(), 0, this->readBuffer);
+	CloseHandle(this->overlappedRead.hEvent);
+	CloseHandle(this->hPipe);
 }
